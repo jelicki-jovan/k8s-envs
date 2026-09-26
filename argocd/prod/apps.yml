@@ -9,8 +9,6 @@ spec:
     repoURL: https://github.com/jelicki-jovan/k8s-envs.git
     targetRevision: main
     path: environments/prod/applications
-    directory:
-      recurse: false
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
