@@ -1,0 +1,31 @@
+clusterName: hw-eks-prod
+# Set explicitly: pods can't reach IMDS (hop limit 1), so the controller can't discover them itself
+region: us-east-1
+vpcId: vpc-086a664df13e6c830
+
+replicaCount: 2
+
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-aws-lb-controller-prod
+
+# ALB sends traffic straight to pod IPs (VPC CNI), no NodePort hop
+defaultTargetType: ip
+
+nodeSelector:
+  workload-type: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+podDisruptionBudget:
+  maxUnavailable: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
