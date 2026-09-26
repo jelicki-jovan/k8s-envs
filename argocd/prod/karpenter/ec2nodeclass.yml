@@ -1,0 +1,35 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: default
+spec:
+  role: hw-eks-karpenter-node-prod
+  amiSelectorTerms:
+    # Pinned (same release as the system node group); bump deliberately in Git to roll nodes
+    - alias: al2023@v20260923
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: hw-eks-prod
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: hw-eks-prod
+  kubelet:
+    # VPC CNI prefix delegation is enabled, so pods are limited by CPU/memory, not ENI IPs
+    maxPods: 110
+    # Set explicitly: Karpenter would otherwise derive it from maxPods (11Mi x 110 + 255Mi ≈ 1.4Gi),
+    # leaving almost nothing on a 2 GiB t3.small. Same values as the system nodes.
+    kubeReserved:
+      cpu: 70m
+      memory: 442Mi
+      ephemeral-storage: 1Gi
+  metadataOptions:
+    httpEndpoint: enabled
+    httpTokens: required
+    httpPutResponseHopLimit: 1
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 20Gi
+        volumeType: gp3
+        encrypted: true
+        deleteOnTermination: true
