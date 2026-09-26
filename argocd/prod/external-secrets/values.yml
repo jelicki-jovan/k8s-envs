@@ -1,0 +1,63 @@
+installCRDs: true
+
+# Only namespaced SecretStores: each app gets its own SecretStore + ExternalSecret in its namespace.
+# ClusterSecretStore / ClusterExternalSecret are ignored even if someone creates them.
+processClusterStore: false
+processClusterExternalSecret: false
+
+replicaCount: 2
+leaderElect: true
+
+serviceAccount:
+  create: true
+  # Must match the IRSA trust in Terraform: external-secrets:external-secrets
+  name: external-secrets
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-external-secrets-prod
+
+nodeSelector:
+  workload-type: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+webhook:
+  replicaCount: 2
+  nodeSelector:
+    workload-type: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+certController:
+  nodeSelector:
+    workload-type: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
