@@ -1,0 +1,45 @@
+# Runs pending DB migrations once per sync, after config/secrets (wave -2) and before the
+# Deployment (wave 0). A failure stops the sync; old pods keep running.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hw-backend-migrate-prod
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    # Keep the last Job (and its logs) until the next sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  template:
+    spec:
+      serviceAccountName: hw-backend-prod
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: backend
+          command: ["node", "../node_modules/sequelize-cli/lib/sequelize", "db:migrate"]
+          envFrom:
+            - configMapRef:
+                name: hw-backend-prod
+            - secretRef:
+                name: hw-backend-prod
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

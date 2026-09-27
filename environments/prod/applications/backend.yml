@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hw-backend-prod
+  namespace: argocd
+spec:
+  project: prod
+  source:
+    repoURL: https://github.com/jelicki-jovan/k8s-envs.git
+    targetRevision: main
+    path: environments/prod/overlays/backend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Namespace "prod" and its SecretStore come from platform apps: retry until they exist
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -8,12 +8,11 @@ processClusterExternalSecret: false
 replicaCount: 2
 leaderElect: true
 
+# No IAM role for the controller itself: each namespace's SecretStore logs in with its own
+# service account + IAM role (see stores/), so the controller alone can't read any secret.
 serviceAccount:
   create: true
-  # Must match the IRSA trust in Terraform: external-secrets:external-secrets
   name: external-secrets
-  annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-external-secrets-prod
 
 nodeSelector:
   workload-type: system

@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: prod
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: hw-backend-prod
+      app.kubernetes.io/part-of: home-work
+    includeSelectors: true
+
+resources:
+  - serviceaccount.yml
+  - externalsecret.yml
+  - migration-job.yml
+  - deployment.yml
+  - service.yml
+  - hpa.yml
+  - pdb.yml
+
+configMapGenerator:
+  - name: hw-backend-prod
+    options:
+      annotations:
+        argocd.argoproj.io/sync-wave: "-2"
+    literals:
+      - NODE_ENV=production
+      - PORT=3001
+      - PROD_DB_HOSTNAME=hw-rds-prod.cyxmmswce3ym.us-east-1.rds.amazonaws.com
+      - PROD_DB_NAME=home_work
+      - PROD_DB_DIALECT=postgres
+      - PROD_DB_LOGGING=false
+      - PROD_DB_SSL=true
+      - PROD_DB_SSL_CA=/app/certs/rds-us-east-1.pem
+
+# CI updates newTag after pushing a new image
+images:
+  - name: backend
+    newName: 003636669641.dkr.ecr.us-east-1.amazonaws.com/hw-backend-prod
+    newTag: 49b4b3b
