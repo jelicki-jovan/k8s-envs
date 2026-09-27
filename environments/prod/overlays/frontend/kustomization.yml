@@ -26,4 +26,4 @@ configMapGenerator:
 images:
   - name: frontend
     newName: 003636669641.dkr.ecr.us-east-1.amazonaws.com/hw-frontend-prod
-    newTag: 49b4b3b
+    newTag: ba61d40
