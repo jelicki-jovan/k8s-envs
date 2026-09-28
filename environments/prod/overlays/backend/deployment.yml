@@ -81,6 +81,13 @@ spec:
                 name: hw-backend-prod
             - secretRef:
                 name: hw-backend-prod
+          # Not in the ConfigMap: the migration Job reads it too and must keep the master user.
+          # IAM auth: 15-min token from the IRSA role (service account), no DB password in the pod.
+          env:
+            - name: PROD_DB_USERNAME
+              value: app_user
+            - name: PROD_DB_IAM_AUTH
+              value: "true"
           resources:
             requests:
               cpu: 100m

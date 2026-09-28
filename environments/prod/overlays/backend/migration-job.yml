@@ -30,8 +30,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: hw-backend-prod
+            # Master user (not app_user): migrations change the schema
             - secretRef:
-                name: hw-backend-prod
+                name: hw-backend-migrate-prod
           resources:
             requests:
               cpu: 100m
