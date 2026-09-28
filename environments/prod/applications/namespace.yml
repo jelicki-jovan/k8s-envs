@@ -1,0 +1,13 @@
+# Namespace of the prod business apps, created by apps-prod before the Applications (wave -1).
+# Pod Security Admission: pods must meet the "restricted" profile.
+# Prune=false: ArgoCD never deletes it (deleting a namespace deletes everything in it).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false

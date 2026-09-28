@@ -1,0 +1,66 @@
+# Monitoring + logging in one Application: kube-prometheus-stack (Prometheus, Alertmanager, Grafana,
+# node-exporter, kube-state-metrics), Loki, Alloy, and their gp3 StorageClass (monitoring/manifests).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      chart: kube-prometheus-stack
+      targetRevision: 91.8.1
+      helm:
+        releaseName: kube-prometheus-stack
+        valueFiles:
+          - $values/argocd/prod/monitoring/kube-prometheus-stack/values.yml
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 7.3.0
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/argocd/prod/monitoring/loki/values.yml
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: alloy
+      targetRevision: 1.13.0
+      helm:
+        releaseName: alloy
+        valueFiles:
+          - $values/argocd/prod/monitoring/alloy/values.yml
+    - repoURL: https://github.com/jelicki-jovan/k8s-envs.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/jelicki-jovan/k8s-envs.git
+      targetRevision: main
+      path: argocd/prod/monitoring/manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  # Grafana's admin password is generated randomly by the chart on every render; without this ArgoCD
+  # (selfHeal) would keep overwriting the Secret with a new password. The first generated one stays.
+  ignoreDifferences:
+    - kind: Secret
+      name: kube-prometheus-stack-grafana
+      jsonPointers:
+        - /data/admin-password
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    # "privileged" Pod Security on purpose: node-exporter needs host network/PID and Alloy reads
+    # /var/log from the host (DaemonSets on every node)
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

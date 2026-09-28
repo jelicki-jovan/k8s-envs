@@ -1,0 +1,77 @@
+# Loki in single-binary mode (one pod does ingest, storage and queries): right-sized for our log volume.
+# Logs (chunks + index) live in S3; the pod reaches S3 via IRSA (Terraform: hw-eks-loki-prod).
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  schemaConfig:
+    configs:
+      - from: "2026-09-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  storage:
+    type: s3
+    bucketNames:
+      chunks: hw-loki-prod
+      ruler: hw-loki-prod
+    s3:
+      region: us-east-1
+  # 30 days retention, enforced by the compactor (deletes old chunks from S3)
+  limits_config:
+    retention_period: 720h
+  compactor:
+    retention_enabled: true
+    delete_request_store: s3
+
+serviceAccount:
+  create: true
+  name: loki
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-loki-prod
+
+singleBinary:
+  replicas: 1
+  # Write-ahead log + local index cache before data is shipped to S3
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: gp3
+  nodeSelector:
+    workload-type: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# Components of the scalable modes, not used in single-binary mode
+read:
+  replicas: 0
+write:
+  replicas: 0
+backend:
+  replicas: 0
+
+# Not needed at this size (and memcached caches alone would need GBs of memory)
+gateway:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+minio:
+  enabled: false

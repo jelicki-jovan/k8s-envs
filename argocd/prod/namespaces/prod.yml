@@ -1,9 +1,0 @@
-# Business apps namespace, owned by the platform (not by the apps).
-# Pod Security Admission: pods must meet the "restricted" profile.
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: prod
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/warn: restricted

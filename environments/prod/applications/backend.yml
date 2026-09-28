@@ -16,7 +16,7 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    # Namespace "prod" and its SecretStore come from platform apps: retry until they exist
+    # Namespace "prod" (apps-prod) and its SecretStore (external-secrets app) come first: retry until they exist
     retry:
       limit: 5
       backoff:

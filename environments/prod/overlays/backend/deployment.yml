@@ -28,7 +28,11 @@ spec:
         runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      # Placement: 1 replica per AZ, >=1 on on-demand (rest can be spot), evenly spread over nodes
+      # Placement (rules are about this Deployment's pods; Karpenter adds nodes only when a pod can't fit):
+      # even over 3 AZs, even over on-demand/spot, even over nodes. For 3 replicas: 1 per AZ, 3 nodes,
+      # >=1 on-demand and >=1 spot.
+      # matchLabelKeys pod-template-hash: spread is counted per revision, so during a rollout the old
+      # ReplicaSet's pods (same app label) don't skew where the new ones land.
       topologySpreadConstraints:
         # Always 3 AZs, even before Karpenter has a node in each (missing zones count as 0 pods)
         - maxSkew: 1
@@ -39,7 +43,11 @@ spec:
           labelSelector:
             matchLabels:
               app: hw-backend-prod
-        # Always both on-demand and spot: guarantees the on-demand replica even if only spot nodes exist
+          matchLabelKeys:
+            - pod-template-hash
+        # Even split on-demand/spot (3 -> 2+1 either way, 6 -> 3+3), never all on one type: minDomains 2
+        # forces an on-demand node even if only spot nodes exist. ~Half the replicas survive a spot reclaim
+        # wave, at the cost of more on-demand than "just 1" when the HPA scales up.
         - maxSkew: 1
           topologyKey: karpenter.sh/capacity-type
           whenUnsatisfiable: DoNotSchedule
@@ -48,8 +56,11 @@ spec:
           labelSelector:
             matchLabels:
               app: hw-backend-prod
-        # Even spread over nodes: 1 per node while there are enough nodes, 2+ only when the HPA scales
-        # beyond the node count. Honor taints so the tainted system nodes don't count as empty nodes.
+          matchLabelKeys:
+            - pod-template-hash
+        # Even spread over nodes (counts differ by <=1): a 2nd pod on a node only once every app node has
+        # one; alone it doesn't force new nodes (the zone rule does). Honor taints so the tainted system
+        # nodes don't count as empty nodes.
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
@@ -57,6 +68,8 @@ spec:
           labelSelector:
             matchLabels:
               app: hw-backend-prod
+          matchLabelKeys:
+            - pod-template-hash
       containers:
         - name: backend
           image: backend

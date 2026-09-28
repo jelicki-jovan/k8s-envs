@@ -29,4 +29,6 @@ spec:
       expireAfter: Never
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized
-    consolidateAfter: 1m
+    # Wait until pods settle (rollouts, HPA scale-down) before consolidating: at 1m it consolidated
+    # mid-rollout and broke the replicas' zone spread
+    consolidateAfter: 10m

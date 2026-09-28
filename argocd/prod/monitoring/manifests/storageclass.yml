@@ -1,0 +1,16 @@
+# Default StorageClass (used by Prometheus and Loki volumes): encrypted gp3 EBS volumes. Encryption set here explicitly: the account doesn't
+# encrypt EBS by default and the EBS CSI add-on's built-in class has no encryption option.
+# WaitForFirstConsumer: the volume is created in the AZ of the node the pod lands on.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+  encrypted: "true"
