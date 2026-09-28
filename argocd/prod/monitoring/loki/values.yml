@@ -47,6 +47,17 @@ singleBinary:
   tolerations:
     - key: CriticalAddonsOnly
       operator: Exists
+  # Not on the same node as Prometheus (preferred; see the Prometheus values). Replaces the chart's
+  # default self anti-affinity, irrelevant with 1 replica.
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: prometheus
   resources:
     requests:
       cpu: 100m

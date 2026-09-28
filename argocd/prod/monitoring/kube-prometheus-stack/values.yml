@@ -58,6 +58,17 @@ prometheus:
     tolerations:
       - key: CriticalAddonsOnly
         operator: Exists
+    # Not on the same node as Loki (the two biggest memory users). Preferred, not required: both volumes
+    # are AZ-bound (only 2 system nodes per AZ at most), so a hard rule could leave one Pending.
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: loki
     resources:
       requests:
         cpu: 200m
@@ -106,12 +117,13 @@ grafana:
   tolerations:
     - key: CriticalAddonsOnly
       operator: Exists
+  # Was 192Mi/384Mi: OOMKilled (Explore + Loki queries + background plugin install at startup)
   resources:
     requests:
       cpu: 50m
-      memory: 192Mi
-    limits:
       memory: 384Mi
+    limits:
+      memory: 768Mi
   additionalDataSources:
     - name: Loki
       type: loki
