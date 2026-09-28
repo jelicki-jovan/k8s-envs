@@ -85,6 +85,63 @@ prometheus:
               storage: 20Gi
 
 alertmanager:
+  serviceAccount:
+    create: true
+    name: alertmanager
+    annotations:
+      # Terraform: hw-eks-alertmanager-prod, sns:Publish on hw-alerts-prod + hw-watchdog-prod
+      eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-alertmanager-prod
+  # Replaces the chart's default config (routes everything to "null"); inhibit rules kept as in the chart
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: [namespace, alertname]
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: [namespace, alertname]
+      - source_matchers: ['alertname = InfoInhibitor']
+        target_matchers: ['severity = info']
+        equal: [namespace]
+      - target_matchers: ['alertname = InfoInhibitor']
+    route:
+      group_by: [namespace, alertname]
+      group_wait: 30s
+      group_interval: 5m
+      # Still firing → reminder every 4h, not every few minutes
+      repeat_interval: 4h
+      receiver: "null"
+      routes:
+        # Dead man's switch: always firing, re-sent every 5 min to the heartbeat topic; a CloudWatch
+        # alarm emails when it stops arriving
+        - receiver: watchdog
+          matchers: ['alertname = "Watchdog"']
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 5m
+        - receiver: "null"
+          matchers: ['alertname = "InfoInhibitor"']
+        - receiver: email
+          matchers: ['severity =~ "critical|warning"']
+    receivers:
+      - name: "null"
+      - name: email
+        sns_configs:
+          - topic_arn: arn:aws:sns:us-east-1:003636669641:hw-alerts-prod
+            # No keys: AWS SDK default chain → IRSA web identity from the service account
+            sigv4:
+              region: us-east-1
+            send_resolved: true
+      - name: watchdog
+        sns_configs:
+          - topic_arn: arn:aws:sns:us-east-1:003636669641:hw-watchdog-prod
+            sigv4:
+              region: us-east-1
+            send_resolved: false
+    templates:
+      - /etc/alertmanager/config/*.tmpl
   alertmanagerSpec:
     nodeSelector:
       workload-type: system
