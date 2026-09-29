@@ -142,3 +142,34 @@ does, so pods leave the load balancer while the DB is unreachable.
 4. CI in the app's repo: build, push to ECR, bump `newTag` here.
 
 Commit and push: `apps-prod` picks up the new Application, which then deploys the app.
+
+## With more environments: a shared base
+
+With only prod, each app is a single overlay. With dev/staging, most of the manifests would be identical in
+every environment: the Service, the probes, security context and spread rules of the Deployment, the PDB,
+the migration Job. Copying them per environment means every fix has to be repeated (and eventually isn't).
+
+I'd move those into a separate **`k8s-base` repository** and keep only what really differs per environment
+here:
+
+| `k8s-base` (shared, versioned) | `k8s-envs/environments/<env>/overlays/<app>` (per environment) |
+|---|---|
+| Deployment skeleton (probes, security context, spread rules, graceful shutdown), Service, PDB, migration Job | image tag, replicas / HPA limits, resources, config values, IAM role annotations, Ingress host |
+
+Each overlay pulls the base **pinned to a tag or commit** and patches it (Kustomize remote base):
+
+```yaml
+# environments/prod/overlays/backend/kustomization.yml
+resources:
+  - https://github.com/jelicki-jovan/k8s-base//apps/backend?ref=v1.4.0
+patches:
+  - path: deployment-patch.yml   # prod-specific: resources, env
+images:
+  - name: backend
+    newTag: c287398
+```
+
+- **Pinned**: a change in the base reaches an environment only when its `ref` is bumped, so a base change
+  can go to dev first and to prod after it's proven, like an image.
+- **Reviewed once**: base changes are reviewed in one place; environment repos only review the diff of
+  their own values.
