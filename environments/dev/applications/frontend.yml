@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hw-frontend-dev
+  namespace: argocd
+spec:
+  project: dev
+  source:
+    repoURL: https://github.com/jelicki-jovan/k8s-envs.git
+    targetRevision: main
+    path: environments/dev/overlays/frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Namespace "dev" (apps-dev) comes first: retry until it exists
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

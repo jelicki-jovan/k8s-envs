@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Dev business apps
+  sourceRepos:
+    - https://github.com/jelicki-jovan/k8s-envs.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: dev

@@ -1,0 +1,25 @@
+# Namespace dev's secret access. The SecretStore logs in as this service account, whose IAM role
+# (Terraform: hw-eks-eso-ns-dev) can read only "dev/*" secrets + the dev RDS secret.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets
+  namespace: dev
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::003636669641:role/hw-eks-eso-ns-dev
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: aws-secrets-manager
+  namespace: dev
+spec:
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: external-secrets

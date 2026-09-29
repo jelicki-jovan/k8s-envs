@@ -1,0 +1,55 @@
+installCRDs: true
+
+# Only namespaced SecretStores: each app gets its own SecretStore + ExternalSecret in its namespace.
+# ClusterSecretStore / ClusterExternalSecret are ignored even if someone creates them.
+processClusterStore: false
+processClusterExternalSecret: false
+
+# Dev: 1 replica each (prod runs 2 + PDBs)
+replicaCount: 1
+
+# No IAM role for the controller itself: each namespace's SecretStore logs in with its own
+# service account + IAM role (see stores/), so the controller alone can't read any secret.
+serviceAccount:
+  create: true
+  name: external-secrets
+
+nodeSelector:
+  workload-type: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+webhook:
+  replicaCount: 1
+  nodeSelector:
+    workload-type: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+certController:
+  nodeSelector:
+    workload-type: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      memory: 128Mi

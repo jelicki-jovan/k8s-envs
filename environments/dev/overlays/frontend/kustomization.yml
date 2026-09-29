@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: hw-frontend-dev
+      app.kubernetes.io/part-of: home-work
+    includeSelectors: true
+
+# Dev: 1 replica, no PDB (prod: 3 replicas, PDB minAvailable 2)
+resources:
+  - serviceaccount.yml
+  - deployment.yml
+  - service.yml
+  - ingress.yml
+
+# nginx /api proxy, mounted into the image's /etc/nginx/snippets include hook
+configMapGenerator:
+  - name: hw-frontend-dev-nginx
+    files:
+      - api-proxy.conf
+
+# CI updates newTag after pushing a new image
+images:
+  - name: frontend
+    newName: 003636669641.dkr.ecr.us-east-1.amazonaws.com/hw-frontend-dev
+    newTag: c287398

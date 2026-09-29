@@ -1,0 +1,40 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: dev
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: hw-backend-dev
+      app.kubernetes.io/part-of: home-work
+    includeSelectors: true
+
+# Dev: 1 replica, no HPA, no PDB (prod: HPA 3-6, PDB minAvailable 2)
+resources:
+  - serviceaccount.yml
+  - externalsecret.yml
+  - migration-job.yml
+  - deployment.yml
+  - service.yml
+
+# PROD_DB_* is the app's config profile for NODE_ENV=production (TLS, IAM auth), not the environment
+configMapGenerator:
+  - name: hw-backend-dev
+    options:
+      annotations:
+        argocd.argoproj.io/sync-wave: "-2"
+    literals:
+      - NODE_ENV=production
+      - PORT=3001
+      - PROD_DB_HOSTNAME=hw-rds-dev.cyxmmswce3ym.us-east-1.rds.amazonaws.com
+      - PROD_DB_NAME=home_work
+      - PROD_DB_DIALECT=postgres
+      - PROD_DB_LOGGING=false
+      - PROD_DB_SSL=true
+      - PROD_DB_SSL_CA=/app/certs/rds-us-east-1.pem
+
+# CI updates newTag after pushing a new image
+images:
+  - name: backend
+    newName: 003636669641.dkr.ecr.us-east-1.amazonaws.com/hw-backend-dev
+    newTag: c287398
