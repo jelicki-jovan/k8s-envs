@@ -37,4 +37,4 @@ configMapGenerator:
 images:
   - name: backend
     newName: 003636669641.dkr.ecr.us-east-1.amazonaws.com/hw-backend-prod
-    newTag: aa51c28
+    newTag: 1591aa2
