@@ -4,6 +4,9 @@ GitOps repository: the desired state of everything **inside** the EKS cluster. [
 watches this repo and keeps the cluster in sync with it (auto-sync, prune, self-heal): a change here is a
 deploy, and a manual change in the cluster is reverted.
 
+It holds two environments, **dev** and **prod**. Each runs in its **own EKS cluster** with its **own Argo CD**;
+both read this one repository, each only its own folders.
+
 Part of a three-repo setup; the overview (architecture, setup from zero, decisions) is in the
 [terraform repo's README](https://github.com/jelicki-jovan/terraform):
 
@@ -17,25 +20,39 @@ Part of a three-repo setup; the overview (architecture, setup from zero, decisio
 
 ```mermaid
 flowchart TD
-  tf[Terraform<br/>helm_release argocd_root_app] --> root[Application <b>prod</b><br/>argocd/prod/*.yml]
-  root --> lbc[aws-lb-controller]
-  root --> eso[external-secrets]
-  root --> karp[karpenter<br/>NodePools, EC2NodeClass]
-  root --> mon[monitoring<br/>Prometheus, Grafana, Loki, Alloy]
-  root --> proj[AppProject prod]
-  root --> apps[Application <b>apps-prod</b><br/>environments/prod/applications]
-  apps --> ns[Namespace prod]
-  apps --> be[hw-backend-prod]
-  apps --> fe[hw-frontend-prod]
+  subgraph prodc[prod cluster hw-eks-prod]
+    tf[Terraform<br/>helm_release argocd_root_app] --> root[Application <b>prod</b><br/>argocd/prod/*.yml]
+    root --> lbc[aws-lb-controller]
+    root --> eso[external-secrets]
+    root --> karp[karpenter<br/>NodePools, EC2NodeClass]
+    root --> mon[monitoring<br/>Prometheus, Grafana, Loki, Alloy]
+    root --> proj[AppProject prod]
+    root --> apps[Application <b>apps-prod</b><br/>environments/prod/applications]
+    apps --> ns[Namespace prod]
+    apps --> be[hw-backend-prod]
+    apps --> fe[hw-frontend-prod]
+  end
+  subgraph devc[dev cluster hw-eks-dev]
+    tfd[Terraform<br/>helm_release argocd_root_app] --> rootd[Application <b>dev</b><br/>argocd/dev/*.yml]
+    rootd --> platd[aws-lb-controller,<br/>external-secrets, karpenter]
+    rootd --> projd[AppProject dev]
+    rootd --> appsd[Application <b>apps-dev</b><br/>environments/dev/applications]
+    appsd --> nsd[Namespace dev]
+    appsd --> bed[hw-backend-dev]
+    appsd --> fed[hw-frontend-dev]
+  end
 ```
 
-- **Terraform creates only one Application**, the root app `prod`. It syncs every top-level `*.yml` in
-  `argocd/prod/`, and each of those is itself an Application (the "app of apps" pattern). Everything else in
-  the cluster follows from Git: no manual `kubectl apply` after the Terraform apply.
-- **Platform add-ons** (`argocd/prod/`): upstream Helm charts with pinned versions, values from this repo
+- **Terraform creates only one Application per cluster**, the root app (`prod` / `dev`). It syncs every
+  top-level `*.yml` in `argocd/<env>/`, and each of those is itself an Application (the "app of apps"
+  pattern). Everything else in the cluster follows from Git: no manual `kubectl apply` after the Terraform
+  apply.
+- **Each cluster's Argo CD reads only its own folders** (`argocd/<env>/`, `environments/<env>/`): a change
+  for dev can't reach prod, and the other way round.
+- **Platform add-ons** (`argocd/<env>/`): upstream Helm charts with pinned versions, values from this repo
   (Argo CD multi-source: chart + `$values/...values.yml`).
-- **Business apps** (`environments/prod/`): the bridge Application `apps-prod` syncs one Application per app,
-  each pointing at a Kustomize overlay.
+- **Business apps** (`environments/<env>/`): the bridge Application `apps-<env>` syncs one Application per
+  app, each pointing at a Kustomize overlay.
 
 ## Layout
 
@@ -48,6 +65,9 @@ argocd/prod/                       platform, synced by the root app "prod"
 ├── karpenter.yml          + karpenter/                       NodePools (spot, on-demand) + EC2NodeClass
 └── monitoring.yml         + monitoring/                      kube-prometheus-stack 91.8.1, loki 7.3.0,
                                                               alloy 1.13.0, gp3 StorageClass
+argocd/dev/                        platform of the dev cluster, synced by its root app "dev":
+                                   apps.yml, project.yml, aws-lb-controller, external-secrets,
+                                   karpenter (spot NodePool only); no monitoring
 environments/prod/
 ├── applications/                  synced by apps-prod
 │   ├── namespace.yml              → Namespace prod (Pod Security "restricted")
@@ -58,10 +78,25 @@ environments/prod/
     │                              migration Job, ConfigMap (generated), image tag
     └── frontend/                  Deployment, Service, Ingress (→ ALB), PDB, ServiceAccount,
                                    nginx /api proxy config, image tag
+environments/dev/                  same structure as prod: applications/ (namespace dev, hw-*-dev) and
+                                   overlays/ (1 replica, no HPA / PDB / spread rules, ALB hw-alb-dev)
 ```
 
-Naming: Kubernetes objects of the business apps are `hw-<app>-prod`; file and folder names stay plain
+Naming: Kubernetes objects of the business apps are `hw-<app>-<env>`; file and folder names stay plain
 (`overlays/backend/`).
+
+## Dev vs. prod
+
+Dev is deliberately small: it's where every change lands first and where the performance test runs.
+
+| | prod | dev |
+|---|---|---|
+| Replicas | backend 3-6 (HPA), frontend 3 | 1 each, no HPA |
+| PDB, topology spread rules | yes | no (nothing to spread with 1 replica) |
+| Karpenter NodePools | spot + on-demand, at least one replica on on-demand | spot only |
+| Monitoring | Prometheus, Alertmanager, Grafana, Loki, Alloy | none |
+| Add-on replicas (LB Controller, External Secrets) | 2, with PDBs | 1 |
+| **The same** | images (same digest), probes, security context, Pod Security "restricted", IAM database auth, secrets via External Secrets, sync waves and migration Job | |
 
 ## Guardrails
 
@@ -76,22 +111,24 @@ Naming: Kubernetes objects of the business apps are `hw-<app>-prod`; file and fo
 
 ## How a deploy arrives
 
-1. The app repo's CI pushes an image to ECR, then commits the new tag here
-   (`environments/prod/overlays/<app>/kustomization.yml` → `images.newTag`, commit
-   `deploy(<app>): prod <sha>`).
-2. Argo CD notices the commit (polls every 30 s) and syncs the app, in **sync waves**:
+1. The app repo's CI builds the image once, pushes it to the dev ECR repository and commits the new tag for
+   **dev** (`environments/dev/overlays/<app>/kustomization.yml` → `images.newTag`, commit
+   `deploy(<app>): dev <sha>`).
+2. After the performance test on dev passed, CI copies the same image to the prod repository and commits the
+   tag for **prod** (`deploy(<app>): prod <sha>`).
+3. In each cluster, Argo CD notices its commit (polls every 30 s) and syncs the app, in **sync waves**:
 
    | Wave | What |
    |---|---|
    | -2 | ServiceAccount, ConfigMap, ExternalSecrets (config and secrets exist first) |
    | -1 | **Migration Job** (backend only, Argo CD sync hook): runs pending DB migrations once; if it fails, the sync stops and the old pods keep serving |
    | 0 | Deployment, Service, HPA, PDB, Ingress |
-3. **Rolling update** without downtime: one extra pod at a time (`maxSurge: 1`, `maxUnavailable: 0`), a new
+4. **Rolling update** without downtime: one extra pod at a time (`maxSurge: 1`, `maxUnavailable: 0`), a new
    pod gets traffic only when its readiness probe passes, old pods get 10 s to be taken out of the load
    balancer before they stop.
 
-**Rollback** = `git revert` of the tag commit. Changing things with `kubectl` doesn't stick: self-heal
-reverts it.
+**Rollback** = `git revert` of the tag commit, per environment. Changing things with `kubectl` doesn't
+stick: self-heal reverts it.
 
 ## Apps
 
@@ -134,20 +171,23 @@ does, so pods leave the load balancer while the DB is unreachable.
 
 ## Adding a new app
 
-1. `environments/prod/overlays/<app>/`: manifests + `kustomization.yml` (with `images.newTag`); follow the
-   backend/frontend patterns (probes, resources, security context, spread rules, PDB).
-2. `environments/prod/applications/<app>.yml`: an Application `hw-<app>-prod` in project `prod`, pointing at
-   the overlay.
-3. AWS side (ECR repository, IAM role, secrets `prod/<app>`) in the terraform repo.
-4. CI in the app's repo: build, push to ECR, bump `newTag` here.
+Per environment (dev and prod):
 
-Commit and push: `apps-prod` picks up the new Application, which then deploys the app.
+1. `environments/<env>/overlays/<app>/`: manifests + `kustomization.yml` (with `images.newTag`); follow the
+   backend/frontend patterns (probes, resources, security context, and for prod spread rules and PDB).
+2. `environments/<env>/applications/<app>.yml`: an Application `hw-<app>-<env>` in project `<env>`, pointing
+   at the overlay.
+3. AWS side (ECR repositories, IAM roles, secrets `<env>/<app>`) in the terraform repo.
+4. CI in the app's repo: build once, deploy to dev, performance test, promote to prod (the same reusable
+   workflows and actions as backend/frontend).
+
+Commit and push: `apps-<env>` picks up the new Application, which then deploys the app.
 
 ## With more environments: a shared base
 
-With only prod, each app is a single overlay. With dev/staging, most of the manifests would be identical in
-every environment: the Service, the probes, security context and spread rules of the Deployment, the PDB,
-the migration Job. Copying them per environment means every fix has to be repeated (and eventually isn't).
+With dev and prod, most manifests are already duplicated: the Service, the probes and security context of
+the Deployment, the migration Job, the nginx proxy config. Copying them per environment means every fix has
+to be repeated (and eventually isn't).
 
 I'd move those into a separate **`k8s-base` repository** and keep only what really differs per environment
 here:
